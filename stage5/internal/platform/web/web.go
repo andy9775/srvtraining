@@ -52,8 +52,8 @@ func (a *App) Handle(verb, path string, handler Handler, mw ...Middleware) {
 	// The function to execute for each request.
 	h := func(w http.ResponseWriter, r *http.Request, params map[string]string) {
 
-		// Time to start thinking about context.
-		ctx := context.TODO()
+		// Use the request for the parent context.
+		ctx := r.Context()
 
 		// Set the context with the required values to
 		// process the request.

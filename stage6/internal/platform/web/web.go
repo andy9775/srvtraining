@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ardanlabs/srvtraining/stage6/internal/platform/trace"
 	"github.com/dimfeld/httptreemux"
+	"go.opencensus.io/trace"
 )
 
 // TraceIDHeader is the header added to outgoing requests which adds the
@@ -58,10 +58,8 @@ func (a *App) Handle(verb, path string, handler Handler, mw ...Middleware) {
 	// The function to execute for each request.
 	h := func(w http.ResponseWriter, r *http.Request, params map[string]string) {
 
-		// Check the request for an existing Trace. The WithSpanContext
-		// function can unmarshal any existing context or create a new one.
-		spanContext := r.Header.Get(TraceIDHeader)
-		ctx, span := trace.WithSpanContext(r.Context(), "crud request", spanContext)
+		// Add a SPAN for this request.
+		ctx, span := trace.StartSpan(r.Context(), "internal.platform.web")
 		defer span.End()
 
 		// Set the context with the required values to
@@ -71,14 +69,6 @@ func (a *App) Handle(verb, path string, handler Handler, mw ...Middleware) {
 			Now:     time.Now(),
 		}
 		ctx = context.WithValue(ctx, KeyValues, &v)
-
-		// Set the parent span on the outgoing requests before any other header to
-		// ensure that the trace is ALWAYS added to the request regardless of
-		// any error occuring or not.
-		data, err := trace.MarshalSpanContext(span.SpanContext())
-		if err == nil {
-			w.Header().Set(TraceIDHeader, string(data))
-		}
 
 		// Call the wrapped handler functions.
 		if err := handler(ctx, w, r, params); err != nil {

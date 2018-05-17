@@ -12,7 +12,9 @@ import (
 
 	"github.com/ardanlabs/srvtraining/stage6/cmd/crud/handlers"
 	"github.com/ardanlabs/srvtraining/stage6/internal/platform/cfg"
-	itrace "github.com/ardanlabs/srvtraining/stage6/internal/platform/trace"
+	openzipkin "github.com/openzipkin/zipkin-go"
+	ziphttp "github.com/openzipkin/zipkin-go/reporter/http"
+	"go.opencensus.io/exporter/zipkin"
 	"go.opencensus.io/trace"
 )
 
@@ -45,55 +47,33 @@ func main() {
 	if err != nil {
 		apiHost = "0.0.0.0:3000"
 	}
-	traceHost, err := c.String("TRACE_HOST")
+	zipkinHost, err := c.String("ZIPKIN_HOST")
 	if err != nil {
-		traceHost = "http://tracer:5000/v1/publish"
-	}
-	traceBatchSize, err := c.Int("TRACE_BATCH_SIZE")
-	if err != nil {
-		traceBatchSize = 1000
-	}
-	traceSendInterval, err := c.Duration("TRACE_SEND_INTERVAL")
-	if err != nil {
-		traceSendInterval = 15 * time.Second
-	}
-	traceSendTimeout, err := c.Duration("TRACE_SEND_TIMEOUT")
-	if err != nil {
-		traceSendTimeout = 500 * time.Millisecond
+		zipkinHost = "http://zipkin:9411/api/v2/spans"
 	}
 
 	log.Printf("config : %s=%v", "READ_TIMEOUT", readTimeout)
 	log.Printf("config : %s=%v", "WRITE_TIMEOUT", writeTimeout)
 	log.Printf("config : %s=%v", "SHUTDOWN_TIMEOUT", shutdownTimeout)
 	log.Printf("config : %s=%v", "API_HOST", apiHost)
-	log.Printf("config : %s=%v", "TRACE_HOST", traceHost)
-	log.Printf("config : %s=%v", "TRACE_BATCH_SIZE", traceBatchSize)
-	log.Printf("config : %s=%v", "TRACE_SEND_INTERVAL", traceSendInterval)
-	log.Printf("config : %s=%v", "TRACE_SEND_TIMEOUT", traceSendTimeout)
+	log.Printf("config : %s=%v", "ZIPKIN_HOST", zipkinHost)
 
 	// =========================================================================
 	// Start Tracing Support
 
-	logger := func(format string, v ...interface{}) {
-		log.Printf(format, v...)
-	}
+	log.Printf("main : Tracing Started : %s", zipkinHost)
 
-	log.Printf("main : Tracing Started : %s", traceHost)
-	exporter, err := itrace.NewExporter(logger, traceHost, traceBatchSize, traceSendInterval, traceSendTimeout)
+	localEndpoint, err := openzipkin.NewEndpoint("crud", apiHost)
 	if err != nil {
-		log.Fatalf("main : RegiTracingster : ERROR : %v", err)
+		log.Fatalf("main : OpenZipkin Endpoint : %v", err)
 	}
-	defer func() {
-		log.Printf("main : Tracing Stopping : %s", traceHost)
-		batch, err := exporter.Close()
-		if err != nil {
-			log.Printf("main : Tracing Stopped : ERROR : Batch[%d] : %v", batch, err)
-		} else {
-			log.Printf("main : Tracing Stopped : Flushed Batch[%d]", batch)
-		}
-	}()
 
+	reporter := ziphttp.NewReporter(zipkinHost)
+	defer reporter.Close()
+
+	exporter := zipkin.NewExporter(reporter, localEndpoint)
 	trace.RegisterExporter(exporter)
+
 	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
 
 	// =========================================================================
